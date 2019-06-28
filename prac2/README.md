@@ -1,0 +1,1 @@
+controlplane 起動前後の状態取得
