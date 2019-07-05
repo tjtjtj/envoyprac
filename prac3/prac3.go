@@ -45,7 +45,8 @@ func endpoints1st() clustersInfo {
 			{
 				Name : "hello_cluster",
 				Upstreams: []upstream {
-					{Address: "127.0.0.1", Port: 8080},
+					{Address: "192.168.0.32", Port: 8080},
+					{Address: "192.168.0.33", Port: 8080},					
 				},
 			},
 		},
@@ -58,7 +59,8 @@ func endpoints2nd() clustersInfo {
 			{
 				Name : "hello_cluster",
 				Upstreams: []upstream {
-					{Address: "127.0.0.1", Port: 8081},
+					{Address: "192.168.0.32", Port: 8081},
+					{Address: "192.168.0.33", Port: 8081},
 				},
 			},
 		},
