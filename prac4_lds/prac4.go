@@ -9,7 +9,7 @@ import (
 
 	api "github.com/envoyproxy/go-control-plane/envoy/api/v2"
 	core "github.com/envoyproxy/go-control-plane/envoy/api/v2/core"
-	//"github.com/envoyproxy/go-control-plane/envoy/api/v2/endpoint"
+	"github.com/envoyproxy/go-control-plane/envoy/api/v2/endpoint"
 	"github.com/envoyproxy/go-control-plane/pkg/cache"
 	xds "github.com/envoyproxy/go-control-plane/pkg/server"
 	listener "github.com/envoyproxy/go-control-plane/envoy/api/v2/listener"
@@ -129,7 +129,7 @@ func createSnapshot(clinfo clustersInfo) cache.Snapshot {
 	}
 
 	lstnr := api.Listener{
-		Name: "name: listener_0",
+		Name: "listener_0",
 		Address: core.Address{
 			Address: &core.Address_SocketAddress{
 				SocketAddress: &core.SocketAddress{
@@ -162,13 +162,55 @@ func createSnapshot(clinfo clustersInfo) cache.Snapshot {
           http_filters:
           - name: envoy.router
 */
+	var listenerresources []cache.Resource
+	listenerresources = append(listenerresources, &lstnr)
+
+/*
+	clusters:
+	- name: hello_cluster
+	  type: STRICT_DNS
+	  connect_timeout: 0.25s
+	  lb_policy: ROUND_ROBIN
+	  load_assignment:
+		cluster_name: hello_cluster
+		endpoints:
+		- lb_endpoints:
+		  - endpoint:
+			  address:
+				socket_address: { address: hello1, port_value: 80 }
+		  - endpoint:
+			  address:
+				socket_address: { address: hello2, port_value: 80 }
+*/
+	cluster := api.Cluster {
+		Name: "hello_cluster",
+		ClusterDiscoveryType: &api.Cluster_Type{
+			Type: api.Cluster_STRICT_DNS,
+		},
+		ConnectTimeout: 1,
+		LbPolicy: api.Cluster_ROUND_ROBIN,
+		LoadAssignment: &api.ClusterLoadAssignment{
+			ClusterName: "hello_cluster",
+	 		Endpoints: []endpoint.LocalityLbEndpoints{{
+				LbEndpoints: []endpoint.LbEndpoint{{
+					HostIdentifier: &endpoint.LbEndpoint_Endpoint {
+						Endpoint: &endpoint.Endpoint{
+							Address: &core.Address{
+								Address: &core.Address_SocketAddress{
+									SocketAddress: &core.SocketAddress{
+										Address:       "192.168.0.32",
+										PortSpecifier: &core.SocketAddress_PortValue{PortValue: 8080},
+ 									},
+								},
+							},
+						},
+	 				},
+	 			}},
+			}},
+		},
+	}
 
 
-
-
-
-
-	var resources []cache.Resource
 	// for _, cluster := range clinfo.Clusters {
 	// 	eps := make([]endpoint.LocalityLbEndpoints, len(cluster.Upstreams))
 	// 	for i, up := range cluster.Upstreams {
@@ -196,10 +238,11 @@ func createSnapshot(clinfo clustersInfo) cache.Snapshot {
 	// 	resources = append(resources, assignment)
 	// }
 
-	resources = append(resources, &lstnr)
+	var clusterResources []cache.Resource
+	clusterResources = append(clusterResources, &cluster)
 
 
-	return cache.NewSnapshot(clinfo.Version, nil, nil, nil, resources)
+	return cache.NewSnapshot(clinfo.Version, nil, clusterResources, nil, listenerresources)
 }
 
 func run(listen string, cluinfo clustersInfo) error {
