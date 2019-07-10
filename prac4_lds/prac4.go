@@ -13,6 +13,7 @@ import (
 	"github.com/envoyproxy/go-control-plane/pkg/cache"
 	xds "github.com/envoyproxy/go-control-plane/pkg/server"
 	listener "github.com/envoyproxy/go-control-plane/envoy/api/v2/listener"
+	route "github.com/envoyproxy/go-control-plane/envoy/api/v2/route"
 	"google.golang.org/grpc"
 	types "github.com/gogo/protobuf/types"
 )
@@ -78,38 +79,53 @@ func endpoints2nd() clustersInfo {
 
 func createSnapshot(clinfo clustersInfo) cache.Snapshot {
 
+/*
+- name: listener_0
+  address:
+    socket_address: { address: 0.0.0.0, port_value: 80 }
+    filter_chains:
+    - filters:
+      - name: envoy.http_connection_manager
+        typed_config:
+          "@type": type.googleapis.com/envoy.config.filter.network.http_connection_manager.v2.HttpConnectionManager
+          stat_prefix: ingress_http
+          codec_type: AUTO
+          rds:
+            route_config_name: local_route
+            config_source:
+              api_config_source:
+                api_type: GRPC
+                grpc_services:
+                  envoy_grpc:
+                    cluster_name: xds_cluster
+          http_filters:
+          - name: envoy.router
+*/
+
 	filter := listener.Filter{
 		Name: "envoy.http_connection_manager",
 		ConfigType: &listener.Filter_Config {
 			Config: &types.Struct {
 				Fields: map[string]*types.Value {
 					"stat_prefix": &types.Value{Kind: &types.Value_StringValue{StringValue: "ingress_http"}}, 
-					"route_config": &types.Value{Kind: &types.Value_StructValue{StructValue: &types.Struct {
+					"rds": &types.Value{Kind: &types.Value_StructValue{StructValue: &types.Struct {
 						Fields: map[string]*types.Value {
-							"name": &types.Value{Kind: &types.Value_StringValue{StringValue: "route"}}, 
-							"virtual_hosts": &types.Value{Kind: &types.Value_StructValue{StructValue: &types.Struct {
+							"route_config_name": &types.Value{Kind: &types.Value_StringValue{StringValue: "local_route"}}, 
+							"config_source": &types.Value{Kind: &types.Value_StructValue{StructValue: &types.Struct {
 								Fields: map[string]*types.Value {
-									"name": &types.Value{Kind: &types.Value_StringValue{StringValue: "hello_service"}}, 
-									"domains": &types.Value{Kind: &types.Value_ListValue{ListValue: &types.ListValue{
-										Values: []*types.Value{
-											&types.Value{Kind: &types.Value_StringValue{StringValue: "hello.local"}},
-										},
-									}}}, 
-									"routes": &types.Value{Kind: &types.Value_StructValue{StructValue: &types.Struct {
+									"api_config_source": &types.Value{Kind: &types.Value_StructValue{StructValue: &types.Struct{
 										Fields: map[string]*types.Value {
-											"match": &types.Value{Kind: &types.Value_StructValue{StructValue: &types.Struct {
+											"grpc_services": &types.Value{Kind: &types.Value_StructValue{StructValue: &types.Struct{
 												Fields: map[string]*types.Value {
-													"prefix": &types.Value{Kind: &types.Value_StringValue{StringValue: "/"}}, 
+													"grpc_services": &types.Value{Kind: &types.Value_StructValue{StructValue: &types.Struct{
+														Fields: map[string]*types.Value {
+															"cluster_name": &types.Value{Kind: &types.Value_StringValue{StringValue: "xds_cluster"}}, 
+														},
+													}}},
 												},
 											}}},
-											"route": &types.Value{Kind: &types.Value_StructValue{StructValue: &types.Struct{
-												Fields: map[string]*types.Value {
-													"cluster": &types.Value{Kind: &types.Value_StringValue{StringValue: "hello_cluster"}}, 
-												},
-											}}}, 
 										},
-									}}},
-		
+									}}}, 
 								},
 							}}},
 						},
@@ -142,28 +158,45 @@ func createSnapshot(clinfo clustersInfo) cache.Snapshot {
 	}
 	//listeners := []api.Listener{lstnr}
 
-/*
-	- name: listener_0
-    address:
-      socket_address: { address: 0.0.0.0, port_value: 80 }
-    filter_chains:
-    - filters:
-      - name: envoy.http_connection_manager
-        config:
-          stat_prefix: ingress_http
-          route_config:
-            name: route
-            virtual_hosts:
-            - name: hello_service
-              domains: ["hello.local"]
-              routes:
-              - match: { prefix: "/" }
-                route: { cluster: hello_cluster }
-          http_filters:
-          - name: envoy.router
-*/
 	var listenerresources []cache.Resource
 	listenerresources = append(listenerresources, &lstnr)
+
+/* RDS
+	version_info: "0"
+	resources:
+	- "@type": type.googleapis.com/envoy.api.v2.RouteConfiguration
+	  name: local_route
+	  virtual_hosts:
+	  - name: hello_service
+		domains: ["hello.local"]
+		routes:
+		- match: { prefix: "/" }
+		  route: { cluster: hello_cluster }
+*/
+	resroute := api.RouteConfiguration{
+		Name: "local_route",
+		VirtualHosts: []route.VirtualHost{{
+			Name: "hello_service",
+			Domains: []string{"hello.local"},
+			Routes: []route.Route{{
+				Match: route.RouteMatch{
+					PathSpecifier: &route.RouteMatch_Prefix{
+						Prefix: "/",
+					},
+				},
+				Action: &route.Route_Route{
+					Route: &route.RouteAction {
+						ClusterSpecifier: &route.RouteAction_Cluster{
+							Cluster: "hello_cluster",
+						},
+					},
+				},
+			}},
+		}},
+	}
+	var routeResources []cache.Resource
+	routeResources = append(routeResources, &resroute)
+
 
 /*
 	clusters:
@@ -182,7 +215,7 @@ func createSnapshot(clinfo clustersInfo) cache.Snapshot {
 			  address:
 				socket_address: { address: hello2, port_value: 80 }
 */
-	cluster := api.Cluster {
+	rescluster := api.Cluster {
 		Name: "hello_cluster",
 		ClusterDiscoveryType: &api.Cluster_Type{
 			Type: api.Cluster_STRICT_DNS,
@@ -239,10 +272,10 @@ func createSnapshot(clinfo clustersInfo) cache.Snapshot {
 	// }
 
 	var clusterResources []cache.Resource
-	clusterResources = append(clusterResources, &cluster)
+	clusterResources = append(clusterResources, &rescluster)
 
 
-	return cache.NewSnapshot(clinfo.Version, nil, clusterResources, nil, listenerresources)
+	return cache.NewSnapshot(clinfo.Version, nil, clusterResources, routeResources, listenerresources)
 }
 
 func run(listen string, cluinfo clustersInfo) error {
