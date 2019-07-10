@@ -101,47 +101,36 @@ func createSnapshot(clinfo clustersInfo) cache.Snapshot {
           http_filters:
           - name: envoy.router
 */
+str := `{
+	"@type": "type.googleapis.com/envoy.config.filter.network.http_connection_manager.v2.HttpConnectionManager",
+	"stat_prefix": "ingress_http",
+	"rds": {
+	  "route_config_name": "local_route",
+	  "config_source": {
+		"api_config_source": {
+		  "api_type": "GRPC",
+		  "grpc_services": {
+			"envoy_grpc" : {
+			  "cluster_name": "xds_cluster"
+			}
+		  }
+		}
+	  }
+	},
+	"http_filters": [
+		{"name": "envoy.router"}
+	]
+}`
+
+
+
 
 	filter := listener.Filter{
 		Name: "envoy.http_connection_manager",
-		ConfigType: &listener.Filter_Config {
-			Config: &types.Struct {
-				Fields: map[string]*types.Value {
-					"stat_prefix": &types.Value{Kind: &types.Value_StringValue{StringValue: "ingress_http"}}, 
-					"codec_type": &types.Value{Kind: &types.Value_StringValue{StringValue: "AUTO"}}, 
-					"rds": &types.Value{Kind: &types.Value_StructValue{StructValue: &types.Struct {
-						Fields: map[string]*types.Value {
-							"route_config_name": &types.Value{Kind: &types.Value_StringValue{StringValue: "local_route"}}, 
-							"config_source": &types.Value{Kind: &types.Value_StructValue{StructValue: &types.Struct {
-								Fields: map[string]*types.Value {
-									"api_config_source": &types.Value{Kind: &types.Value_StructValue{StructValue: &types.Struct{
-										Fields: map[string]*types.Value {
-											"api_type": &types.Value{Kind: &types.Value_StringValue{StringValue: "GRPC"}}, 
-											"grpc_services": &types.Value{Kind: &types.Value_StructValue{StructValue: &types.Struct{
-												Fields: map[string]*types.Value {
-													"grpc_services": &types.Value{Kind: &types.Value_StructValue{StructValue: &types.Struct{
-														Fields: map[string]*types.Value {
-															"envoy_grpc": &types.Value{Kind: &types.Value_StructValue{StructValue: &types.Struct{
-																Fields: map[string]*types.Value {
-																	"cluster_name": &types.Value{Kind: &types.Value_StringValue{StringValue: "xds_cluster"}}, 
-																},
-															}}},
-														},
-													}}},
-												},
-											}}},
-										},
-									}}}, 
-								},
-							}}},
-						},
-					}}},
-					"http_filters": &types.Value{Kind: &types.Value_StructValue{StructValue: &types.Struct {
-						Fields: map[string]*types.Value {
-							"name": &types.Value{Kind: &types.Value_StringValue{StringValue: "envoy.router"}}, 
-						},
-					}}},
-				},
+		ConfigType: &listener.Filter_TypedConfig {
+			TypedConfig: &types.Any {
+				TypeUrl: "type.googleapis.com/envoy.config.filter.network.http_connection_manager.v2.HttpConnectionManager",
+				Value: []byte(str),
 			},
 		},
 	}
