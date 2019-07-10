@@ -108,6 +108,7 @@ func createSnapshot(clinfo clustersInfo) cache.Snapshot {
 			Config: &types.Struct {
 				Fields: map[string]*types.Value {
 					"stat_prefix": &types.Value{Kind: &types.Value_StringValue{StringValue: "ingress_http"}}, 
+					"codec_type": &types.Value{Kind: &types.Value_StringValue{StringValue: "AUTO"}}, 
 					"rds": &types.Value{Kind: &types.Value_StructValue{StructValue: &types.Struct {
 						Fields: map[string]*types.Value {
 							"route_config_name": &types.Value{Kind: &types.Value_StringValue{StringValue: "local_route"}}, 
@@ -115,11 +116,16 @@ func createSnapshot(clinfo clustersInfo) cache.Snapshot {
 								Fields: map[string]*types.Value {
 									"api_config_source": &types.Value{Kind: &types.Value_StructValue{StructValue: &types.Struct{
 										Fields: map[string]*types.Value {
+											"api_type": &types.Value{Kind: &types.Value_StringValue{StringValue: "GRPC"}}, 
 											"grpc_services": &types.Value{Kind: &types.Value_StructValue{StructValue: &types.Struct{
 												Fields: map[string]*types.Value {
 													"grpc_services": &types.Value{Kind: &types.Value_StructValue{StructValue: &types.Struct{
 														Fields: map[string]*types.Value {
-															"cluster_name": &types.Value{Kind: &types.Value_StringValue{StringValue: "xds_cluster"}}, 
+															"envoy_grpc": &types.Value{Kind: &types.Value_StructValue{StructValue: &types.Struct{
+																Fields: map[string]*types.Value {
+																	"cluster_name": &types.Value{Kind: &types.Value_StringValue{StringValue: "xds_cluster"}}, 
+																},
+															}}},
 														},
 													}}},
 												},
