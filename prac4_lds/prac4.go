@@ -9,13 +9,14 @@ import (
 
 	api "github.com/envoyproxy/go-control-plane/envoy/api/v2"
 	core "github.com/envoyproxy/go-control-plane/envoy/api/v2/core"
-	"github.com/envoyproxy/go-control-plane/envoy/api/v2/endpoint"
+	//"github.com/envoyproxy/go-control-plane/envoy/api/v2/endpoint"
 	"github.com/envoyproxy/go-control-plane/pkg/cache"
 	xds "github.com/envoyproxy/go-control-plane/pkg/server"
 	listener "github.com/envoyproxy/go-control-plane/envoy/api/v2/listener"
 	route "github.com/envoyproxy/go-control-plane/envoy/api/v2/route"
+	hcm "github.com/envoyproxy/go-control-plane/envoy/config/filter/network/http_connection_manager/v2"
+	"github.com/envoyproxy/go-control-plane/pkg/util"
 	"google.golang.org/grpc"
-	types "github.com/gogo/protobuf/types"
 )
  
 // NodeHash interfaceの実装。Envoyの識別子から文字列をかえすハッシュ関数を実装する。
@@ -70,76 +71,68 @@ func endpoints2nd() clustersInfo {
 	}
 }
 
-// map[string][]upstream { 
-// 	"hello_cluster": {{"127.0.0.1", 8080}},
-// }
-// var endpoints2nd = map[string][]upstream {
-// 	"hello_cluster": {{"127.0.0.1", 8081}},
-// }
-
-func createSnapshot(clinfo clustersInfo) cache.Snapshot {
-
+func createListener() *api.Listener {
 /*
-- name: listener_0
-  address:
-    socket_address: { address: 0.0.0.0, port_value: 80 }
+  listeners:
+  - name: listener_0
+    address:
+      socket_address: { address: 0.0.0.0, port_value: 80 }
     filter_chains:
     - filters:
       - name: envoy.http_connection_manager
-        typed_config:
-          "@type": type.googleapis.com/envoy.config.filter.network.http_connection_manager.v2.HttpConnectionManager
+        config:
           stat_prefix: ingress_http
-          codec_type: AUTO
-          rds:
-            route_config_name: local_route
-            config_source:
-              api_config_source:
-                api_type: GRPC
-                grpc_services:
-                  envoy_grpc:
-                    cluster_name: xds_cluster
+          route_config:
+            name: route
+            virtual_hosts:
+            - name: hello_service
+              domains: ["hello.local"]
+              routes:
+              - match: { prefix: "/" }
+                route: { cluster: hello_cluster }
           http_filters:
           - name: envoy.router
 */
-str := `{
-	"@type": "type.googleapis.com/envoy.config.filter.network.http_connection_manager.v2.HttpConnectionManager",
-	"stat_prefix": "ingress_http",
-	"rds": {
-	  "route_config_name": "local_route",
-	  "config_source": {
-		"api_config_source": {
-		  "api_type": "GRPC",
-		  "grpc_services": {
-			"envoy_grpc" : {
-			  "cluster_name": "xds_cluster"
-			}
-		  }
-		}
-	  }
-	},
-	"http_filters": [
-		{"name": "envoy.router"}
-	]
-}`
-
-
-
-
-	filter := listener.Filter{
-		Name: "envoy.http_connection_manager",
-		ConfigType: &listener.Filter_TypedConfig {
-			TypedConfig: &types.Any {
-				TypeUrl: "type.googleapis.com/envoy.config.filter.network.http_connection_manager.v2.HttpConnectionManager",
-				Value: []byte(str),
+	manager := &hcm.HttpConnectionManager{
+		StatPrefix: "http",
+		RouteSpecifier: &hcm.HttpConnectionManager_RouteConfig{
+			RouteConfig: &api.RouteConfiguration{
+				Name: "route",
+				VirtualHosts: []route.VirtualHost{{
+					Name:    "hello_cluster",
+					Domains: []string{"hello.local"},
+					Routes: []route.Route{{
+						Match: route.RouteMatch{
+							PathSpecifier: &route.RouteMatch_Prefix{
+								Prefix: "/",
+							},
+						},
+						Action: &route.Route_Route{
+							Route: &route.RouteAction{
+								ClusterSpecifier: &route.RouteAction_Cluster{
+									Cluster: "hello_cluster",
+								},
+							},
+						},
+					}},
+				}},
 			},
 		},
+		HttpFilters: []*hcm.HttpFilter{{
+			Name: "envoy.router",
+		}},
 	}
-
-	filterchain := listener.FilterChain{
-		Filters: []listener.Filter{filter},
+	filterConfig, err := util.MessageToStruct(manager)
+	if err != nil {
+		panic(err.Error())
 	}
-
-	lstnr := api.Listener{
+	//filterChain := listener.FilterChain{
+	//	Filters: []listener.Filter{{
+	//		Name:       "envoy.http_connection_manager",
+	//		ConfigType: &listener.Filter_Config{Config: filterConfig},
+	//	}},
+	//}
+	lstnr := &api.Listener{
 		Name: "listener_0",
 		Address: core.Address{
 			Address: &core.Address_SocketAddress{
@@ -149,12 +142,29 @@ str := `{
 				},
 			},
 		},
-		FilterChains: []listener.FilterChain{filterchain},
+		FilterChains: []listener.FilterChain{{
+			Filters: []listener.Filter{{
+				Name:       "envoy.http_connection_manager",
+				ConfigType: &listener.Filter_Config{
+					Config: filterConfig,
+				},
+			}},
+		}},
 	}
-	//listeners := []api.Listener{lstnr}
+	return lstnr
+}
 
-	var listenerresources []cache.Resource
-	listenerresources = append(listenerresources, &lstnr)
+
+// map[string][]upstream { 
+// 	"hello_cluster": {{"127.0.0.1", 8080}},
+// }
+// var endpoints2nd = map[string][]upstream {
+// 	"hello_cluster": {{"127.0.0.1", 8081}},
+// }
+
+func createSnapshot(clinfo clustersInfo) cache.Snapshot {
+
+	listenerRess := []cache.Resource{createListener()}
 
 /* RDS
 	version_info: "0"
@@ -168,7 +178,8 @@ str := `{
 		- match: { prefix: "/" }
 		  route: { cluster: hello_cluster }
 */
-	resroute := api.RouteConfiguration{
+	/*
+	routeconf := api.RouteConfiguration{
 		Name: "local_route",
 		VirtualHosts: []route.VirtualHost{{
 			Name: "hello_service",
@@ -189,8 +200,9 @@ str := `{
 			}},
 		}},
 	}
-	var routeResources []cache.Resource
-	routeResources = append(routeResources, &resroute)
+	var routeRess []cache.Resource
+	routeRess = append(routeRess, &routeconf)
+	*/
 
 
 /*
@@ -210,7 +222,8 @@ str := `{
 			  address:
 				socket_address: { address: hello2, port_value: 80 }
 */
-	rescluster := api.Cluster {
+/*
+	clusterRes := api.Cluster {
 		Name: "hello_cluster",
 		ClusterDiscoveryType: &api.Cluster_Type{
 			Type: api.Cluster_STRICT_DNS,
@@ -237,7 +250,9 @@ str := `{
 			}},
 		},
 	}
-
+	var clusterRess []cache.Resource
+	clusterRess = append(clusterRess, &clusterRes)
+	*/
 
 	// for _, cluster := range clinfo.Clusters {
 	// 	eps := make([]endpoint.LocalityLbEndpoints, len(cluster.Upstreams))
@@ -266,11 +281,9 @@ str := `{
 	// 	resources = append(resources, assignment)
 	// }
 
-	var clusterResources []cache.Resource
-	clusterResources = append(clusterResources, &rescluster)
 
 
-	return cache.NewSnapshot(clinfo.Version, nil, clusterResources, routeResources, listenerresources)
+	return cache.NewSnapshot(clinfo.Version, nil, nil, nil, listenerRess)
 }
 
 func run(listen string, cluinfo clustersInfo) error {
