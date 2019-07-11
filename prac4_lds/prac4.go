@@ -13,7 +13,7 @@ import (
 	"github.com/envoyproxy/go-control-plane/pkg/cache"
 	xds "github.com/envoyproxy/go-control-plane/pkg/server"
 	listener "github.com/envoyproxy/go-control-plane/envoy/api/v2/listener"
-	route "github.com/envoyproxy/go-control-plane/envoy/api/v2/route"
+	//route "github.com/envoyproxy/go-control-plane/envoy/api/v2/route"
 	hcm "github.com/envoyproxy/go-control-plane/envoy/config/filter/network/http_connection_manager/v2"
 	"github.com/envoyproxy/go-control-plane/pkg/util"
 	"google.golang.org/grpc"
@@ -80,42 +80,40 @@ func createListener() *api.Listener {
     filter_chains:
     - filters:
       - name: envoy.http_connection_manager
-        config:
-          stat_prefix: ingress_http
-          route_config:
-            name: route
-            virtual_hosts:
-            - name: hello_service
-              domains: ["hello.local"]
-              routes:
-              - match: { prefix: "/" }
-                route: { cluster: hello_cluster }
-          http_filters:
-          - name: envoy.router
+      	typed_config:
+        	"@type": type.googleapis.com/envoy.config.filter.network.http_connection_manager.v2.HttpConnectionManager
+       		stat_prefix: ingress_http
+       		codec_type: AUTO
+	        rds:
+          		route_config_name: local_route
+          		config_source:
+            		api_config_source:
+              			api_type: GRPC
+              			grpc_services:
+                			envoy_grpc:
+                  				cluster_name: xds_cluster
+        	http_filters:
+        	- name: envoy.router
 */
 	manager := &hcm.HttpConnectionManager{
 		StatPrefix: "http",
-		RouteSpecifier: &hcm.HttpConnectionManager_RouteConfig{
-			RouteConfig: &api.RouteConfiguration{
-				Name: "route",
-				VirtualHosts: []route.VirtualHost{{
-					Name:    "hello_cluster",
-					Domains: []string{"hello.local"},
-					Routes: []route.Route{{
-						Match: route.RouteMatch{
-							PathSpecifier: &route.RouteMatch_Prefix{
-								Prefix: "/",
-							},
-						},
-						Action: &route.Route_Route{
-							Route: &route.RouteAction{
-								ClusterSpecifier: &route.RouteAction_Cluster{
-									Cluster: "hello_cluster",
+		RouteSpecifier: &hcm.HttpConnectionManager_Rds{
+			Rds: &hcm.Rds{
+				RouteConfigName: "local_route",
+				ConfigSource: core.ConfigSource{
+					ConfigSourceSpecifier: &core.ConfigSource_ApiConfigSource{
+						ApiConfigSource: &core.ApiConfigSource{
+							ApiType: core.ApiConfigSource_GRPC,
+							GrpcServices: []*core.GrpcService{{
+								TargetSpecifier: &core.GrpcService_EnvoyGrpc_{
+									EnvoyGrpc: &core.GrpcService_EnvoyGrpc{
+										ClusterName: "xds_cluster",
+									},
 								},
-							},
+							}},
 						},
-					}},
-				}},
+					},
+				},
 			},
 		},
 		HttpFilters: []*hcm.HttpFilter{{
